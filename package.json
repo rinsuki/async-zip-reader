@@ -1,13 +1,14 @@
 {
     "name": "async-zip-reader",
     "version": "0.1.0",
-    "main": "index.js",
     "description": "Read ZIP File asynchronously",
     "repository": {
         "type": "git",
         "url": "https://github.com/rinsuki/async-zip-reader.git"
     },
     "license": "MIT",
+    "main": "lib/index.js",
+    "types": "lib/index.d.ts",
     "files": [
         "./lib"
     ],
