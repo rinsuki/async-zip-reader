@@ -1,6 +1,6 @@
 import { SyncReader } from "binarin"
 
-import { ZipReader } from "."
+import { ZipReader } from "./reader"
 
 /** async-zip-reader by rinsuki @license MIT */
 
