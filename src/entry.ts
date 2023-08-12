@@ -41,8 +41,9 @@ export class ZipFileEntry {
     constructor(reader: SyncReader, fallbackCharset: string) {
         const magic = reader.u32()
         if (magic !== 0x02014b50) {
-            console.log(magic.toString(16))
-            throw new Error(ZipReader.ERR_NOT_CENTRAL_DIRECTORY_RECORD)
+            throw new Error(
+                ZipReader.ERR_NOT_CENTRAL_DIRECTORY_RECORD(magic.toString(16).padStart(8, "0")),
+            )
         }
         this.madeVersion = reader.u8()
         this.madeHost = reader.u8()

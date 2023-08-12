@@ -8,12 +8,18 @@ import { fileName, parentDirName } from "./utils"
 
 /** async-zip-reader by rinsuki @license MIT */
 
+export interface ZipReaderOptions {
+    debugLogging: boolean
+}
+
 export class ZipReader {
     static readonly ERR_INVALID_MAGIC = "invalid zip magic"
     static readonly ERR_EOCDR_NOT_EXISTS = "End of central directory record not exists"
     static readonly ERR_MULTIDISK_ZIP = "multi-disk zip is not supported"
     static readonly ERR_ZIP64_SOON = "ZIP64 is currently not supported"
-    static readonly ERR_NOT_CENTRAL_DIRECTORY_RECORD = "not central directory record"
+    static readonly ERR_NOT_CENTRAL_DIRECTORY_RECORD = (actualMagic: string) =>
+        `not central directory record (got ${actualMagic})`
+
     static readonly ERR_TOO_HIGH_VERSION = (version: number) =>
         `zip file version is too high (${version})`
 
@@ -24,11 +30,19 @@ export class ZipReader {
         private blobProvider: BlobProvider,
         public files: ZipFileEntry[],
         public directories: Map<string, Map<string, ZipFileEntry | { directory: string }>>,
+        public options: ZipReaderOptions,
     ) {
-        console.log(this)
+        if (options.debugLogging) console.log(this)
     }
 
-    static async init(blobProvider: BlobProvider, fallbackCharset = "shift-jis") {
+    static async init(
+        blobProvider: BlobProvider,
+        fallbackCharset = "shift-jis",
+        optionsInit: Partial<ZipReaderOptions> = {},
+    ) {
+        const options = {
+            debugLogging: optionsInit.debugLogging ?? false,
+        }
         // Find Central Dir Signature
         const EOCDR_LENGTH = 4 + 2 + 2 + 2 + 2 + 4 + 4 + 2
         const blobLastPart = await blobProvider.slicedData(
@@ -53,9 +67,9 @@ export class ZipReader {
         }
         if (!found) throw new Error(this.ERR_EOCDR_NOT_EXISTS)
         const eocdrIndex = index - EOCDR_LENGTH + 2
-        console.log(eocdrIndex)
-        const eocdr = this.parseEOCDR(blobLastPart.slice(eocdrIndex))
-        console.log(eocdr)
+        if (options.debugLogging) console.table({ eocdrIndex })
+        const eocdr = this.parseEOCDR(blobLastPart.slice(eocdrIndex), options.debugLogging)
+        if (options.debugLogging) console.table({ eocdr })
 
         const centralDirChunk = await blobProvider.slicedData(
             eocdr.centralDirOffset,
@@ -81,25 +95,24 @@ export class ZipReader {
                         directories.set(parentDir, parentDirMap)
                     }
                     if (!parentDirMap.has(fileName(dirName))) {
-                        console.log("virtualdir", parentDir, fileName(dirName))
+                        if (options.debugLogging)
+                            console.log("virtualdir", parentDir, fileName(dirName))
                         parentDirMap.set(fileName(dirName), { directory: fileName(dirName) })
                     }
                     dirName = parentDir
                     parentDir = parentDirName(dirName)
                 }
             }
-            console.log(file.dirName, file.fileName, file)
+            if (options.debugLogging) console.log(file.dirName, file.fileName, file)
             dir.set(file.fileName, file)
         }
 
-        console.log(files)
+        if (options.debugLogging) console.log(files)
 
-        // alert(1)
-
-        return new ZipReader(blobProvider, files, directories)
+        return new ZipReader(blobProvider, files, directories, options)
     }
 
-    static parseEOCDR(bytes: Uint8Array) {
+    private static parseEOCDR(bytes: Uint8Array, enableDebugLogging: boolean) {
         const reader = new SyncReader(bytes, 0, true)
         const magic = reader.u32()
         if (magic !== 0x06054b50) throw new Error(this.ERR_INVALID_MAGIC)
@@ -109,7 +122,8 @@ export class ZipReader {
         if (diskNumberWithStartOfCentralDir !== 0) throw new Error(this.ERR_MULTIDISK_ZIP)
         const centralDirectoryCountOnDisk = reader.u16()
         const centralDirectoryCount = reader.u16()
-        console.log(centralDirectoryCount, centralDirectoryCountOnDisk)
+        if (enableDebugLogging)
+            console.table({ centralDirectoryCount, centralDirectoryCountOnDisk })
         if (centralDirectoryCountOnDisk !== centralDirectoryCount)
             throw new Error(this.ERR_MULTIDISK_ZIP)
         const centralDirSize = reader.u32()
@@ -129,7 +143,7 @@ export class ZipReader {
             entry.relativeOffsetOfLocalHeader + 30,
         )
         const reader = new SyncReader(new Uint8Array(fileHeader), 0, true)
-        console.log(new Uint8Array(fileHeader))
+        if (this.options.debugLogging) console.log(new Uint8Array(fileHeader))
         const magic = reader.u32()
         if (magic !== 0x04034b50) throw new Error(ZipReader.ERR_INVALID_MAGIC)
         const version = reader.u8()
@@ -151,26 +165,35 @@ export class ZipReader {
         const extraFieldLength = reader.u16()
         const compressedDataStart =
             entry.relativeOffsetOfLocalHeader + 30 + fileNameLength + extraFieldLength
-        console.table({
-            magic,
-            version,
-            host,
-            generalPurposeFlag,
-            compressionMethod,
-            lastModifiedTime,
-            lastModifiedDate,
-            crc32,
-            compressedSize,
-            uncompressedSize,
-            fileNameLength,
-            extraFieldLength,
-        })
-        console.log(entry, fileNameLength, extraFieldLength, compressedDataStart, compressedSize)
+        if (this.options.debugLogging) {
+            console.table({
+                magic,
+                version,
+                host,
+                generalPurposeFlag,
+                compressionMethod,
+                lastModifiedTime,
+                lastModifiedDate,
+                crc32,
+                compressedSize,
+                uncompressedSize,
+                fileNameLength,
+                extraFieldLength,
+            })
+            console.log(
+                entry,
+                fileNameLength,
+                extraFieldLength,
+                compressedDataStart,
+                compressedSize,
+            )
+        }
         const compressedData = await this.blobProvider.slicedBlob(
             compressedDataStart,
             compressedDataStart + compressedSize,
         )
-        console.log(compressedDataStart, compressedDataStart + compressedSize, compressedData)
+        if (this.options.debugLogging)
+            console.log(compressedDataStart, compressedDataStart + compressedSize, compressedData)
 
         if (compressionMethod === 0) {
             return new File([compressedData], entry.fileName, {
@@ -180,7 +203,7 @@ export class ZipReader {
         } else if (compressionMethod === 8) {
             const compressedArrayBuffer = await compressedData.arrayBuffer()
             const result = inflateRaw(compressedArrayBuffer)
-            console.log(result)
+            if (this.options.debugLogging) console.log(result)
             return new File([result], entry.fileName, {
                 type: mimeFromFileName(entry.fileName),
                 lastModified: entry.lastModified.getTime(),
