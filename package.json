@@ -13,7 +13,7 @@
         "./lib"
     ],
     "scripts": {
-        "prepack": "yarn build",
+        "prepack": "yarn build && rm ./lib/*.test.{d.ts,js}",
         "build": "rm -rf lib && tsc",
         "lint": "prettier -c . && eslint .",
         "fix": "prettier -w . && eslint --fix ."
@@ -24,7 +24,8 @@
         "@types/pako": "^2.0.0",
         "eslint": "^8.19.0",
         "prettier": "^2.7.1",
-        "typescript": "^4.7.4"
+        "typescript": "^4.7.4",
+        "vitest": "^0.34.1"
     },
     "dependencies": {
         "binarin": "^0.2.1",
